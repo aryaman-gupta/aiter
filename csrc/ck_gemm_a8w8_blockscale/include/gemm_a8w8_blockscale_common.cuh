@@ -164,6 +164,24 @@ __forceinline__ torch::Tensor gemm_a8w8_blockscale_impl(torch::Tensor& XQ,
                                                         torch::Tensor& Y,
                                                         int KBatch = 1)
 {
+    // The kernel reads XQ and WQ by row stride, and Y and the scales through
+    // raw pointers as contiguous row-major tensors.
+    TORCH_CHECK(XQ.stride(-1) == 1,
+                "CK blockscale GEMM: XQ inner dim must be contiguous, got strides=[",
+                XQ.stride(0),
+                ",",
+                XQ.stride(1),
+                "]");
+    TORCH_CHECK(WQ.stride(-1) == 1,
+                "CK blockscale GEMM: WQ inner dim must be contiguous, got strides=[",
+                WQ.stride(0),
+                ",",
+                WQ.stride(1),
+                "]");
+    TORCH_CHECK(Y.is_contiguous(), "CK blockscale GEMM: Y must be contiguous");
+    TORCH_CHECK(x_scale.is_contiguous() && w_scale.is_contiguous(),
+                "CK blockscale GEMM: x_scale and w_scale must be contiguous");
+
     int M = XQ.size(0);
     int N = WQ.size(0);
     int K = XQ.size(1);

@@ -1548,6 +1548,16 @@ def _gemm_mxscale_bpreshuffle(XQ, WQ, x_scale, w_scale, Y):
     return Y
 
 
+def _ck_blockscale_operands(
+    XQ: Tensor, WQ: Tensor, x_scale: Tensor, w_scale: Tensor
+) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+    """The operands as CK and CK-tile blockscale read them: they read the scales
+    through raw pointers as row-major [M, K/128] and [N/128, K/128], so a strided
+    view of them (e.g. a transpose) would be misread. No copy when the operands
+    are already contiguous."""
+    return XQ.contiguous(), WQ.contiguous(), x_scale.contiguous(), w_scale.contiguous()
+
+
 @_route(op="gemm_a8w8_blockscale", fake=gemm_a8w8_blockscale_fake, mutates_args=[])
 @torch_compile_guard(mutates_args=[], gen_fake=gemm_a8w8_blockscale_fake)
 def gemm_a8w8_blockscale(
@@ -1640,20 +1650,14 @@ def gemm_a8w8_blockscale(
         Y = torch.empty(m, n, dtype=dtype, device=XQ.device)
         if libtype == "ck":
             return gemm_a8w8_blockscale_ck(
-                XQ,
-                WQ,
-                x_scale,
-                w_scale,
+                *_ck_blockscale_operands(XQ, WQ, x_scale, w_scale),
                 Y,
                 splitK=splitK,
                 kernelName=kernelName,
             )
         elif libtype == "cktile":
             return gemm_a8w8_blockscale_cktile(
-                XQ,
-                WQ,
-                x_scale,
-                w_scale,
+                *_ck_blockscale_operands(XQ, WQ, x_scale, w_scale),
                 Y,
                 splitK=splitK,
                 kernelName=kernelName,
@@ -1672,7 +1676,9 @@ def gemm_a8w8_blockscale(
         return _blockscale_triton(XQ, WQ, x_scale, w_scale, dtype)
     Y = torch.empty(m, n, dtype=dtype, device=XQ.device)
     try:
-        return gemm_a8w8_blockscale_ck(XQ, WQ, x_scale, w_scale, Y)
+        return gemm_a8w8_blockscale_ck(
+            *_ck_blockscale_operands(XQ, WQ, x_scale, w_scale), Y
+        )
     except RuntimeError as e:
         raise RuntimeError(
             f"gemm_a8w8_blockscale failed for shape M={m}, N={n}, K={k}, "

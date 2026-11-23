@@ -304,6 +304,9 @@ __forceinline__ torch::Tensor gemm_a8w8_blockscale_cktile_impl(torch::Tensor& XQ
                 ",",
                 Y.stride(1),
                 "]");
+    // The scales are read through raw pointers as contiguous row-major tensors.
+    TORCH_CHECK(x_scale.is_contiguous() && w_scale.is_contiguous(),
+                "CKTile blockscale GEMM: x_scale and w_scale must be contiguous");
 
     // M, N, K
     const int M = XQ.size(0);
